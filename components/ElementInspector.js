@@ -9,24 +9,22 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  AlignJustify,
   Square,
   Link2,
   PaintBucket,
   Plus,
+  Minus,
   Type,
   ChevronDown,
   RotateCw,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useTheme } from './ThemeContext';
 import CustomColorPicker from './CustomColorPicker';
 import { FONT_FAMILIES } from '../lib/fontLibrary';
 
-const TEXT_SIZES = [
-  { label: 'S', value: 'small', title: 'Small (12px)' },
-  { label: 'M', value: 'medium', title: 'Medium (15px)' },
-  { label: 'L', value: 'large', title: 'Large (18px)' },
-  { label: 'H', value: 'heading', title: 'Heading (24px)' },
-];
+const QUICK_FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96, 120];
 
 const COLOR_PALETTE = [
   { id: 'auto', name: 'Auto adaptive', color: '#18181A' },
@@ -72,9 +70,13 @@ export default function ElementInspector({
   const [showFillMenu, setShowFillMenu] = useState(false);
   const [showCustomFillPicker, setShowCustomFillPicker] = useState(false);
   const [showFontMenu, setShowFontMenu] = useState(false);
+  const [showSizeMenu, setShowSizeMenu] = useState(false);
+  const [showSpacingMenu, setShowSpacingMenu] = useState(false);
 
   const fontMenuRef = useRef(null);
   const fillMenuRef = useRef(null);
+  const sizeMenuRef = useRef(null);
+  const spacingMenuRef = useRef(null);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -85,6 +87,12 @@ export default function ElementInspector({
         setShowFillMenu(false);
         setShowCustomFillPicker(false);
       }
+      if (sizeMenuRef.current && !sizeMenuRef.current.contains(e.target)) {
+        setShowSizeMenu(false);
+      }
+      if (spacingMenuRef.current && !spacingMenuRef.current.contains(e.target)) {
+        setShowSpacingMenu(false);
+      }
     };
     window.addEventListener('pointerdown', handleClickOutside);
     return () => window.removeEventListener('pointerdown', handleClickOutside);
@@ -93,6 +101,7 @@ export default function ElementInspector({
   if (!selectedElement) return null;
 
   const isSticky = selectedElement.type === 'sticky-note';
+  const isText = selectedElement.type === 'text';
   const isClosedShape =
     selectedElement.type === 'rectangle' ||
     selectedElement.type === 'ellipse' ||
@@ -102,7 +111,7 @@ export default function ElementInspector({
     selectedElement.type === 'flow-connector' ||
     selectedElement.type === 'arrow';
   const isShape = isClosedShape || isLineOrArrow;
-  const isText = selectedElement.type === 'text';
+  const isVideo = selectedElement.type === 'video-block';
   const hasTextCapabilities = isSticky || isText || isClosedShape;
 
   const btnBase =
@@ -110,7 +119,7 @@ export default function ElementInspector({
   const activeBtn =
     'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-semibold shadow-xs';
 
-  // Execute rich text formatting (formats only highlighted/selected text if any)
+  // Execute rich text formatting
   const handleExecFormat = (command, toggleField) => {
     const sel = typeof window !== 'undefined' ? window.getSelection() : null;
     if (sel && sel.toString().length > 0) {
@@ -123,7 +132,24 @@ export default function ElementInspector({
   };
 
   const currentFontId = selectedElement.fontFamily || 'Inter';
-  const currentFont = FONT_FAMILIES.find((f) => f.id === currentFontId) || FONT_FAMILIES[0];
+  const currentFont =
+    FONT_FAMILIES.find((f) => f.id === currentFontId) || FONT_FAMILIES[0];
+
+  const currentFontSize =
+    typeof selectedElement.fontSize === 'number'
+      ? selectedElement.fontSize
+      : selectedElement.fontSize === 'small'
+      ? 14
+      : selectedElement.fontSize === 'large'
+      ? 28
+      : selectedElement.fontSize === 'heading'
+      ? 36
+      : 24;
+
+  const handleStepFontSize = (delta) => {
+    const next = Math.max(8, Math.min(180, currentFontSize + delta));
+    onChange(selectedElement.id, { fontSize: next });
+  };
 
   return (
     <div
@@ -134,7 +160,7 @@ export default function ElementInspector({
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
-      className="absolute top-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 p-1.5 rounded-2xl bg-white/95 dark:bg-[#202024]/95 backdrop-blur-md border border-black/10 dark:border-white/10 shadow-xl shadow-black/5 text-xs select-none animate-in fade-in slide-in-from-top-2 duration-150 pointer-events-auto"
+      className="absolute top-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 p-1.5 rounded-2xl bg-white/95 dark:bg-[#202024]/95 backdrop-blur-md border border-black/10 dark:border-white/10 shadow-xl shadow-black/5 text-xs select-none animate-in fade-in slide-in-from-top-2 duration-150 pointer-events-auto max-w-[95vw] overflow-x-auto custom-scrollbar"
     >
       {/* Sticky Note: Color Presets, In-App Custom Hex Picker & Square/Rect Toggle */}
       {isSticky && (
@@ -160,7 +186,7 @@ export default function ElementInspector({
               />
             ))}
 
-            {/* Custom Hex Color Picker Trigger (App UI Popover) */}
+            {/* Custom Hex Color Picker with Done Button */}
             <div className="relative">
               <button
                 type="button"
@@ -179,7 +205,7 @@ export default function ElementInspector({
                     ? selectedElement.color
                     : 'transparent',
                 }}
-                title="Custom color (Hex picker)"
+                title="Custom color (Hex picker with Done button)"
               >
                 {!selectedElement.color?.startsWith('#') && (
                   <Plus className="w-2.5 h-2.5 text-neutral-500 dark:text-neutral-400" />
@@ -230,7 +256,7 @@ export default function ElementInspector({
         </>
       )}
 
-      {/* Font Family Library Dropdown */}
+      {/* Font Family Library Dropdown (Canva typography) */}
       {hasTextCapabilities && (
         <div ref={fontMenuRef} className="relative">
           <button
@@ -294,6 +320,75 @@ export default function ElementInspector({
         </div>
       )}
 
+      {/* Canva Numeric Font Size Stepper & Input */}
+      {hasTextCapabilities && (
+        <div ref={sizeMenuRef} className="relative flex items-center bg-neutral-100 dark:bg-neutral-800/80 rounded-lg p-0.5">
+          <button
+            type="button"
+            onClick={() => handleStepFontSize(-2)}
+            className="p-1 hover:bg-white dark:hover:bg-neutral-700 rounded text-neutral-600 dark:text-neutral-300 transition"
+            title="Decrease font size"
+          >
+            <Minus className="w-2.5 h-2.5" />
+          </button>
+
+          <input
+            type="number"
+            value={currentFontSize}
+            onChange={(e) => {
+              const val = parseInt(e.target.value, 10);
+              if (!isNaN(val) && val > 4) {
+                onChange(selectedElement.id, { fontSize: val });
+              }
+            }}
+            className="w-8 text-center bg-transparent font-mono text-[11px] font-semibold text-neutral-800 dark:text-neutral-100 outline-none"
+            title="Font size (px)"
+          />
+
+          <button
+            type="button"
+            onClick={() => handleStepFontSize(2)}
+            className="p-1 hover:bg-white dark:hover:bg-neutral-700 rounded text-neutral-600 dark:text-neutral-300 transition"
+            title="Increase font size"
+          >
+            <Plus className="w-2.5 h-2.5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowSizeMenu(!showSizeMenu)}
+            className="p-0.5 hover:bg-white dark:hover:bg-neutral-700 rounded text-neutral-400"
+          >
+            <ChevronDown className="w-2.5 h-2.5" />
+          </button>
+
+          {showSizeMenu && (
+            <div
+              onWheel={(e) => e.stopPropagation()}
+              className="absolute top-full left-0 mt-1.5 p-1 rounded-xl bg-white dark:bg-[#222225] border border-black/10 dark:border-white/10 shadow-2xl flex flex-col gap-0.5 w-24 max-h-48 overflow-y-auto custom-scrollbar z-50 animate-in fade-in zoom-in-95 duration-100"
+            >
+              {QUICK_FONT_SIZES.map((sz) => (
+                <button
+                  key={sz}
+                  type="button"
+                  onClick={() => {
+                    onChange(selectedElement.id, { fontSize: sz });
+                    setShowSizeMenu(false);
+                  }}
+                  className={`px-2 py-1 text-xs text-left rounded-lg transition ${
+                    currentFontSize === sz
+                      ? 'bg-blue-500 text-white font-semibold'
+                      : 'hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-200'
+                  }`}
+                >
+                  {sz} px
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Closed Shapes Fill Color Selector */}
       {isClosedShape && (
         <div ref={fillMenuRef} className="relative">
@@ -302,7 +397,7 @@ export default function ElementInspector({
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => setShowFillMenu(!showFillMenu)}
             className={`${btnBase} ${showFillMenu ? activeBtn : ''} px-2 gap-1.5`}
-            title="Change shape fill color (Presets & Hex picker)"
+            title="Change shape fill color"
           >
             <PaintBucket className="w-3.5 h-3.5 text-blue-500" />
             <div
@@ -407,7 +502,7 @@ export default function ElementInspector({
                           ? selectedElement.fillColor
                           : 'transparent',
                     }}
-                    title="Custom fill color (Hex picker)"
+                    title="Custom fill color (Hex picker with Done button)"
                   >
                     <Plus className="w-3 h-3 text-neutral-500 dark:text-neutral-400" />
                   </button>
@@ -483,32 +578,9 @@ export default function ElementInspector({
         </>
       )}
 
-      {/* Rich Text Controls (Sticky note, shape text, text block) */}
+      {/* Rich Formatting Buttons (Canva Bold, Italic, Underline, Strikethrough) */}
       {hasTextCapabilities && (
         <>
-          {/* Text Size Presets */}
-          <div className="flex items-center gap-0.5 bg-neutral-100 dark:bg-neutral-800 p-0.5 rounded-lg">
-            {TEXT_SIZES.map((size) => (
-              <button
-                key={size.value}
-                type="button"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() =>
-                  onChange(selectedElement.id, { fontSize: size.value })
-                }
-                className={`px-2 py-0.5 text-[10px] font-medium rounded transition cursor-pointer ${
-                  (selectedElement.fontSize || 'medium') === size.value
-                    ? 'bg-white dark:bg-neutral-900 font-bold shadow-xs text-neutral-900 dark:text-neutral-100'
-                    : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200'
-                }`}
-                title={size.title}
-              >
-                {size.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Formatting Buttons (Selective Text Formatting) */}
           <div className="flex items-center gap-0.5">
             <button
               type="button"
@@ -518,7 +590,7 @@ export default function ElementInspector({
                 handleExecFormat('bold', 'bold');
               }}
               className={`${btnBase} ${selectedElement.bold ? activeBtn : ''}`}
-              title="Bold selected text (Ctrl+B)"
+              title="Bold text (Ctrl+B)"
             >
               <Bold className="w-3 h-3" />
             </button>
@@ -533,7 +605,7 @@ export default function ElementInspector({
               className={`${btnBase} ${
                 selectedElement.italic ? activeBtn : ''
               }`}
-              title="Italic selected text (Ctrl+I)"
+              title="Italic text (Ctrl+I)"
             >
               <Italic className="w-3 h-3" />
             </button>
@@ -548,7 +620,7 @@ export default function ElementInspector({
               className={`${btnBase} ${
                 selectedElement.underline ? activeBtn : ''
               }`}
-              title="Underline selected text (Ctrl+U)"
+              title="Underline text (Ctrl+U)"
             >
               <Underline className="w-3 h-3" />
             </button>
@@ -576,7 +648,9 @@ export default function ElementInspector({
               onPointerDown={(e) => e.stopPropagation()}
               onClick={() => onChange(selectedElement.id, { align: 'left' })}
               className={`${btnBase} ${
-                selectedElement.align === 'left' ? activeBtn : ''
+                selectedElement.align === 'left' || !selectedElement.align
+                  ? activeBtn
+                  : ''
               }`}
               title="Align left"
             >
@@ -608,13 +682,108 @@ export default function ElementInspector({
             >
               <AlignRight className="w-3 h-3" />
             </button>
+            {isText && (
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() =>
+                  onChange(selectedElement.id, { align: 'justify' })
+                }
+                className={`${btnBase} ${
+                  selectedElement.align === 'justify' ? activeBtn : ''
+                }`}
+                title="Justify"
+              >
+                <AlignJustify className="w-3 h-3" />
+              </button>
+            )}
           </div>
+
+          {/* Canva Spacing Controls (Line spacing & Letter spacing) */}
+          {isText && (
+            <div ref={spacingMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setShowSpacingMenu(!showSpacingMenu)}
+                className={`${btnBase} ${showSpacingMenu ? activeBtn : ''}`}
+                title="Line spacing & Letter spacing"
+              >
+                <SlidersHorizontal className="w-3 h-3" />
+              </button>
+
+              {showSpacingMenu && (
+                <div
+                  onWheel={(e) => e.stopPropagation()}
+                  className="absolute top-full left-0 mt-1.5 p-3 rounded-2xl bg-white dark:bg-[#222225] border border-black/10 dark:border-white/10 shadow-2xl flex flex-col gap-3 w-56 z-50 animate-in fade-in zoom-in-95 duration-100"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-neutral-700 dark:text-neutral-200">
+                      Spacing
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowSpacingMenu(false)}
+                      className="text-neutral-400 hover:text-neutral-600 text-xs"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Letter Spacing Slider */}
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between text-[10px] text-neutral-500">
+                      <span>Letter spacing</span>
+                      <span className="font-mono font-semibold text-neutral-700 dark:text-neutral-300">
+                        {selectedElement.letterSpacing || 0}px
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="-2"
+                      max="12"
+                      step="0.5"
+                      value={selectedElement.letterSpacing || 0}
+                      onChange={(e) =>
+                        onChange(selectedElement.id, {
+                          letterSpacing: parseFloat(e.target.value),
+                        })
+                      }
+                      className="w-full h-1.5 bg-neutral-200 dark:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    />
+                  </div>
+
+                  {/* Line Spacing Slider */}
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between text-[10px] text-neutral-500">
+                      <span>Line spacing</span>
+                      <span className="font-mono font-semibold text-neutral-700 dark:text-neutral-300">
+                        {(selectedElement.lineHeight || 1.3).toFixed(1)}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.8"
+                      max="2.5"
+                      step="0.1"
+                      value={selectedElement.lineHeight || 1.3}
+                      onChange={(e) =>
+                        onChange(selectedElement.id, {
+                          lineHeight: parseFloat(e.target.value),
+                        })
+                      }
+                      className="w-full h-1.5 bg-neutral-200 dark:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="w-[1px] h-4 bg-neutral-200 dark:bg-neutral-800 mx-0.5" />
         </>
       )}
 
-      {/* Stroke / Border Color Palette & Custom Hex for Shapes / Text / Lines */}
+      {/* Color Palette & Custom Hex with Done Button for Text / Shapes */}
       {!isSticky && (
         <div className="flex items-center gap-1 px-1 relative">
           <span className="text-[9px] font-semibold text-neutral-400 mr-0.5">
@@ -649,7 +818,7 @@ export default function ElementInspector({
             />
           ))}
 
-          {/* Custom Hex Picker for shapes/text */}
+          {/* Custom Hex Picker with Done Button */}
           <div className="relative">
             <button
               type="button"
@@ -666,7 +835,7 @@ export default function ElementInspector({
                   ? selectedElement.strokeColor
                   : 'transparent',
               }}
-              title="Custom stroke color (Hex picker)"
+              title="Custom color (Hex picker with Done button)"
             >
               <Plus className="w-2.5 h-2.5 text-neutral-500 dark:text-neutral-400" />
             </button>

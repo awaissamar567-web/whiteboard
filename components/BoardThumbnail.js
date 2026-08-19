@@ -370,6 +370,28 @@ export default function BoardThumbnail({ boardId, className = '' }) {
                 );
               }
 
+              if (el.type === 'video-block') {
+                return (
+                  <div
+                    key={el.id}
+                    style={{
+                      position: 'absolute',
+                      transform: `translate3d(${el.x}px, ${el.y}px, 0) rotate(${rot}deg)`,
+                      width: `${w}px`,
+                      height: `${h}px`,
+                    }}
+                    className="rounded-xl overflow-hidden border border-neutral-700 bg-neutral-950 shadow-md flex flex-col items-center justify-center text-white p-2 text-center"
+                  >
+                    <div className="w-7 h-7 rounded-full bg-blue-600/80 flex items-center justify-center mb-1">
+                      <span className="text-[10px] ml-0.5">▶</span>
+                    </div>
+                    <span className="text-[9px] font-semibold truncate max-w-full px-1 opacity-80">
+                      {el.title || 'Video / Reel'}
+                    </span>
+                  </div>
+                );
+              }
+
               return null;
             })}
           </div>

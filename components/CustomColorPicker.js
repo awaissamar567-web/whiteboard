@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Pipette, ArrowUpDown, Check } from 'lucide-react';
+import { Pipette, ArrowUpDown, Check, X } from 'lucide-react';
 import { useTheme } from './ThemeContext';
 
 // Color math conversion utilities
 function hexToRgb(hex) {
-  let clean = hex.replace('#', '').trim();
+  let clean = (hex || '').replace('#', '').trim();
   if (clean.length === 3) {
     clean = clean
       .split('')
@@ -132,7 +132,7 @@ export default function CustomColorPicker({
   const hueSliderRef = useRef(null);
 
   // Parse current initial color into HSV
-  const initialRgb = hexToRgb(value.startsWith('#') ? value : '#FEF08A');
+  const initialRgb = hexToRgb(value && value.startsWith('#') ? value : '#FEF08A');
   const initialHsv = rgbToHsv(initialRgb.r, initialRgb.g, initialRgb.b);
 
   const [hsv, setHsv] = useState(initialHsv);
@@ -172,18 +172,21 @@ export default function CustomColorPicker({
     };
   }, [onClose]);
 
-  // Notify parent of color update
-  const emitColorChange = useCallback(
-    (newHsv) => {
-      const newRgb = hsvToRgb(newHsv.h, newHsv.s, newHsv.v);
-      const newHex = rgbToHex(newRgb.r, newRgb.g, newRgb.b);
-      setHsv(newHsv);
-      setRgb(newRgb);
-      setHexInput(newHex);
-      onChange && onChange(newHex);
-    },
-    [onChange]
-  );
+  // Update local draft color
+  const updateDraftColor = useCallback((newHsv) => {
+    const newRgb = hsvToRgb(newHsv.h, newHsv.s, newHsv.v);
+    const newHex = rgbToHex(newRgb.r, newRgb.g, newRgb.b);
+    setHsv(newHsv);
+    setRgb(newRgb);
+    setHexInput(newHex);
+  }, []);
+
+  // Handle Commit when user clicks "Done"
+  const handleApplyColor = () => {
+    const finalHex = rgbToHex(rgb.r, rgb.g, rgb.b);
+    onChange && onChange(finalHex);
+    onClose && onClose();
+  };
 
   // Saturation / Value Box drag handler
   const handleSatValPointerDown = (e) => {
@@ -199,7 +202,7 @@ export default function CustomColorPicker({
       const s = x / rect.width;
       const v = 1 - y / rect.height;
 
-      emitColorChange({ ...hsv, s, v });
+      updateDraftColor({ ...hsv, s, v });
     };
 
     updateSatVal(e);
@@ -225,7 +228,7 @@ export default function CustomColorPicker({
       const x = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
       const h = Math.round((x / rect.width) * 360) % 360;
 
-      emitColorChange({ ...hsv, h });
+      updateDraftColor({ ...hsv, h });
     };
 
     updateHue(e);
@@ -249,7 +252,7 @@ export default function CustomColorPicker({
         if (result?.sRGBHex) {
           const pickedRgb = hexToRgb(result.sRGBHex);
           const pickedHsv = rgbToHsv(pickedRgb.r, pickedRgb.g, pickedRgb.b);
-          emitColorChange(pickedHsv);
+          updateDraftColor(pickedHsv);
         }
       } catch (err) {
         // User canceled eye dropper
@@ -267,7 +270,6 @@ export default function CustomColorPicker({
       const parsedHsv = rgbToHsv(parsedRgb.r, parsedRgb.g, parsedRgb.b);
       setHsv(parsedHsv);
       setRgb(parsedRgb);
-      onChange && onChange(rgbToHex(parsedRgb.r, parsedRgb.g, parsedRgb.b));
     }
   };
 
@@ -279,7 +281,6 @@ export default function CustomColorPicker({
     setHsv(nextHsv);
     const nextHex = rgbToHex(nextRgb.r, nextRgb.g, nextRgb.b);
     setHexInput(nextHex);
-    onChange && onChange(nextHex);
   };
 
   const currentHex = rgbToHex(rgb.r, rgb.g, rgb.b);
@@ -294,15 +295,29 @@ export default function CustomColorPicker({
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
-      className={`absolute z-50 p-3 rounded-2xl bg-white dark:bg-[#222225] border border-black/10 dark:border-white/10 shadow-2xl shadow-black/25 flex flex-col gap-3 w-[260px] animate-in fade-in zoom-in-95 duration-100 select-none text-neutral-800 dark:text-neutral-100 font-sans pointer-events-auto ${
+      className={`absolute z-50 p-3 rounded-2xl bg-white dark:bg-[#222225] border border-black/10 dark:border-white/10 shadow-2xl shadow-black/25 flex flex-col gap-2.5 w-[260px] animate-in fade-in zoom-in-95 duration-100 select-none text-neutral-800 dark:text-neutral-100 font-sans pointer-events-auto ${
         position === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
       }`}
     >
+      {/* Top Header */}
+      <div className="flex items-center justify-between px-0.5">
+        <span className="text-[11px] font-semibold tracking-tight text-neutral-600 dark:text-neutral-300">
+          Color picker
+        </span>
+        <button
+          type="button"
+          onClick={() => onClose && onClose()}
+          className="p-1 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition cursor-pointer"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
       {/* 2D Saturation / Value Gradient Canvas Area */}
       <div
         ref={satValBoxRef}
         onPointerDown={handleSatValPointerDown}
-        className="relative w-full h-36 rounded-xl overflow-hidden cursor-crosshair shadow-inner ring-1 ring-black/5 dark:ring-white/10"
+        className="relative w-full h-32 rounded-xl overflow-hidden cursor-crosshair shadow-inner ring-1 ring-black/5 dark:ring-white/10"
         style={{ backgroundColor: pureHueColor }}
       >
         {/* White-to-transparent gradient (horizontal) */}
@@ -332,7 +347,7 @@ export default function CustomColorPicker({
       </div>
 
       {/* Controls Bar: Eyedropper + Live Preview + Rainbow Hue Slider */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2">
         {typeof window !== 'undefined' && 'EyeDropper' in window && (
           <button
             type="button"
@@ -346,9 +361,9 @@ export default function CustomColorPicker({
 
         {/* Large Circular Color Preview Swatch */}
         <div
-          className="w-7 h-7 rounded-full border border-black/10 dark:border-white/20 shadow-xs shrink-0 ring-1 ring-black/5"
+          className="w-6 h-6 rounded-full border border-black/10 dark:border-white/20 shadow-xs shrink-0 ring-1 ring-black/5"
           style={{ backgroundColor: currentHex }}
-          title={`Selected: ${currentHex}`}
+          title={`Draft: ${currentHex}`}
         />
 
         {/* 1D Rainbow Hue Slider Track */}
@@ -438,8 +453,8 @@ export default function CustomColorPicker({
 
       {/* Preset Swatches Palette */}
       <div>
-        <span className="text-[10px] font-medium text-neutral-400 dark:text-neutral-500 block mb-1.5">
-          Preset swatches
+        <span className="text-[10px] font-medium text-neutral-400 dark:text-neutral-500 block mb-1">
+          Presets
         </span>
         <div className="grid grid-cols-8 gap-1.5">
           {QUICK_SWATCHES.map((swatch) => (
@@ -449,7 +464,7 @@ export default function CustomColorPicker({
               onClick={() => {
                 const parsedRgb = hexToRgb(swatch);
                 const parsedHsv = rgbToHsv(parsedRgb.r, parsedRgb.g, parsedRgb.b);
-                emitColorChange(parsedHsv);
+                updateDraftColor(parsedHsv);
               }}
               className={`w-5 h-5 rounded-md border transition-transform cursor-pointer flex items-center justify-center ${
                 currentHex.toUpperCase() === swatch.toUpperCase()
@@ -468,6 +483,35 @@ export default function CustomColorPicker({
               )}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Explicit "Done" Confirmation Button */}
+      <div className="pt-2 border-t border-black/5 dark:border-white/5 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <div
+            className="w-4 h-4 rounded-full border border-black/10 dark:border-white/20"
+            style={{ backgroundColor: currentHex }}
+          />
+          <span className="text-xs font-mono font-semibold">{currentHex}</span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => onClose && onClose()}
+            className="px-2.5 py-1 text-xs rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 transition cursor-pointer font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleApplyColor}
+            className="px-3.5 py-1 text-xs rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-semibold hover:opacity-90 transition cursor-pointer shadow-sm flex items-center gap-1"
+          >
+            <Check className="w-3 h-3" />
+            <span>Done</span>
+          </button>
         </div>
       </div>
     </div>

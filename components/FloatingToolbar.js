@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   MousePointer,
+  Hand,
   Pencil,
   StickyNote,
   ImageIcon,
@@ -25,6 +26,9 @@ import {
   Rows3,
   Grid3X3,
   Maximize2,
+  Video,
+  Film,
+  Upload,
 } from 'lucide-react';
 import { useTheme } from './ThemeContext';
 import CustomColorPicker from './CustomColorPicker';
@@ -67,6 +71,7 @@ export default function FloatingToolbar({
   onChangePattern,
   onAddStickyNote,
   onAddImageBlock,
+  onAddVideo,
   onAddShape,
   onUndo,
   onRedo,
@@ -80,8 +85,12 @@ export default function FloatingToolbar({
   const [showEraserMenu, setShowEraserMenu] = useState(false);
   const [showShapeMenu, setShowShapeMenu] = useState(false);
   const [showNoteMenu, setShowNoteMenu] = useState(false);
+  const [showVideoMenu, setShowVideoMenu] = useState(false);
   const [showThemeMenu, setShowThemeMenu] = useState(false);
   const [showPatternMenu, setShowPatternMenu] = useState(false);
+
+  const [videoUrlInput, setVideoUrlInput] = useState('');
+  const videoFileInputRef = useRef(null);
 
   const [showCustomStickyPicker, setShowCustomStickyPicker] = useState(false);
   const [showCustomPencilPicker, setShowCustomPencilPicker] = useState(false);
@@ -93,6 +102,7 @@ export default function FloatingToolbar({
     setShowEraserMenu(false);
     setShowShapeMenu(false);
     setShowNoteMenu(false);
+    setShowVideoMenu(false);
     setShowThemeMenu(false);
     setShowPatternMenu(false);
     setShowCustomStickyPicker(false);
@@ -142,6 +152,21 @@ export default function FloatingToolbar({
         title="Select / Move (V)"
       >
         <MousePointer className="w-4 h-4" />
+      </button>
+
+      {/* Hand Tool (Pan Canvas) */}
+      <button
+        type="button"
+        onClick={() => {
+          setActiveTool('hand');
+          closeAllMenus();
+        }}
+        className={`${buttonBase} ${
+          activeTool === 'hand' ? activeClass : inactiveClass
+        }`}
+        title="Hand tool (H) - Pan canvas without moving elements"
+      >
+        <Hand className="w-4 h-4" />
       </button>
 
       {/* Pencil / Freehand Draw with Slider */}
@@ -381,6 +406,113 @@ export default function FloatingToolbar({
       >
         <ImageIcon className="w-4 h-4" />
       </button>
+
+      {/* Video & Social Media Reels / Posts Embed Tool */}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => {
+            setShowVideoMenu(!showVideoMenu);
+            setShowPencilMenu(false);
+            setShowEraserMenu(false);
+            setShowShapeMenu(false);
+            setShowNoteMenu(false);
+            setShowThemeMenu(false);
+            setShowPatternMenu(false);
+          }}
+          className={`${buttonBase} ${
+            showVideoMenu ? activeClass : inactiveClass
+          }`}
+          title="Video & Social Media Reels / Embeds"
+        >
+          <Video className="w-4 h-4" />
+        </button>
+
+        {showVideoMenu && (
+          <div
+            onWheel={(e) => e.stopPropagation()}
+            className="absolute left-full top-0 ml-2.5 p-3 rounded-2xl bg-white dark:bg-[#222225] border border-black/10 dark:border-white/10 shadow-2xl flex flex-col gap-2.5 w-64 z-40 animate-in fade-in zoom-in-95 duration-100"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold tracking-tight text-neutral-700 dark:text-neutral-200">
+                Insert Video or Reel
+              </span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium">
+                Instagram / YouTube
+              </span>
+            </div>
+
+            {/* Paste Link input */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-medium text-neutral-400">
+                Paste video or reel URL
+              </label>
+              <input
+                type="text"
+                value={videoUrlInput}
+                onChange={(e) => setVideoUrlInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && videoUrlInput.trim()) {
+                    onAddVideo && onAddVideo(videoUrlInput.trim());
+                    setVideoUrlInput('');
+                    closeAllMenus();
+                  }
+                }}
+                placeholder="https://instagram.com/reel/... or YouTube"
+                className="w-full px-2.5 py-1.5 text-xs rounded-xl bg-neutral-100 dark:bg-neutral-800/80 border border-black/5 dark:border-white/10 outline-none focus:ring-2 focus:ring-blue-500/20 text-neutral-800 dark:text-neutral-100"
+              />
+              <button
+                type="button"
+                disabled={!videoUrlInput.trim()}
+                onClick={() => {
+                  if (videoUrlInput.trim()) {
+                    onAddVideo && onAddVideo(videoUrlInput.trim());
+                    setVideoUrlInput('');
+                    closeAllMenus();
+                  }
+                }}
+                className={`w-full py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer mt-1 ${
+                  videoUrlInput.trim()
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
+                    : 'bg-neutral-200 dark:bg-neutral-800 text-neutral-400 cursor-not-allowed'
+                }`}
+              >
+                Insert Link into Canvas
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 my-0.5">
+              <div className="flex-1 h-[1px] bg-neutral-200 dark:bg-neutral-800" />
+              <span className="text-[9px] text-neutral-400 uppercase font-medium">or</span>
+              <div className="flex-1 h-[1px] bg-neutral-200 dark:bg-neutral-800" />
+            </div>
+
+            {/* Upload Video File */}
+            <input
+              ref={videoFileInputRef}
+              type="file"
+              accept="video/mp4,video/webm,video/ogg,video/quicktime"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  const url = URL.createObjectURL(file);
+                  onAddVideo && onAddVideo(url, file.name);
+                  closeAllMenus();
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => videoFileInputRef.current?.click()}
+              className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-xl border border-dashed border-neutral-300 dark:border-neutral-700 hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 text-xs font-medium text-neutral-700 dark:text-neutral-200 transition cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5 text-blue-500" />
+              <span>Upload .mp4 / .webm file</span>
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Shapes (Rectangle, Circle, Diamond, Arrow, Line) */}
       <div className="relative">

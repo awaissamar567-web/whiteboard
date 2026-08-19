@@ -7,6 +7,7 @@ import {
   Diamond,
   ImageIcon,
   Type,
+  Video,
   X,
   ArrowRight,
 } from 'lucide-react';
@@ -20,6 +21,8 @@ import LinkModal from './LinkModal';
 import StickyNote from './StickyNote';
 import ImageBlock from './ImageBlock';
 import ShapeElement from './ShapeElement';
+import TextElement from './TextElement';
+import VideoBlock from './VideoBlock';
 import { getBoardElements, saveBoardElements } from '../lib/boardStore';
 import { computeConnectorPath } from './BoardThumbnail';
 import { syncBoardToCloud, subscribeToBoardRealtime } from '../lib/supabaseSync';
@@ -76,7 +79,7 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
   const [selectionBox, setSelectionBox] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [linkModal, setLinkModal] = useState({ isOpen: false, elementId: null });
-  const [quickConnectMenu, setQuickConnectMenu] = useState(null); // { sourceId, screenX, screenY }
+  const [quickConnectMenu, setQuickConnectMenu] = useState(null);
 
   const containerRef = useRef(null);
   const rafRef = useRef(null);
@@ -126,10 +129,11 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
         setHistoryIndex(nextIdx);
         setElements(targetElements);
         saveBoardElements(boardId, targetElements);
-        setSelectedIds([]);
+        syncBoardToCloud(boardId, null, targetElements, canvasPattern);
+        showInfo('Undo');
       }
     }
-  }, [boardId, history, historyIndex]);
+  }, [historyIndex, history, boardId, canvasPattern, showInfo]);
 
   const handleRedo = useCallback(() => {
     if (
@@ -143,26 +147,138 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
         setHistoryIndex(nextIdx);
         setElements(targetElements);
         saveBoardElements(boardId, targetElements);
-        setSelectedIds([]);
+        syncBoardToCloud(boardId, null, targetElements, canvasPattern);
+        showInfo('Redo');
       }
     }
-  }, [boardId, history, historyIndex]);
+  }, [historyIndex, history, boardId, canvasPattern, showInfo]);
 
   const screenToWorld = useCallback(
     (screenX, screenY) => {
-      if (!containerRef.current) return { x: screenX, y: screenY };
-      const rect = containerRef.current.getBoundingClientRect();
-      const relX = screenX - rect.left;
-      const relY = screenY - rect.top;
       return {
-        x: (relX - camera.x) / camera.zoom,
-        y: (relY - camera.y) / camera.zoom,
+        x: (screenX - camera.x) / camera.zoom,
+        y: (screenY - camera.y) / camera.zoom,
       };
     },
     [camera]
   );
 
-  const handleAddStickyNote = ({ color = 'amber', isSquare = true }) => {
+  const handleWheel = (e) => {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      const zoomFactor = 1.08;
+      const newZoom =
+        e.deltaY < 0
+          ? Math.min(camera.zoom * zoomFactor, 3.5)
+          : Math.max(camera.zoom / zoomFactor, 0.25);
+
+      const mouseX = e.clientX;
+      const mouseY = e.clientY;
+
+      const newCameraX = mouseX - (mouseX - camera.x) * (newZoom / camera.zoom);
+      const newCameraY = mouseY - (mouseY - camera.y) * (newZoom / camera.zoom);
+
+      setCamera({
+        x: newCameraX,
+        y: newCameraY,
+        zoom: newZoom,
+      });
+    } else {
+      setCamera((prev) => ({
+        ...prev,
+        x: prev.x - e.deltaX,
+        y: prev.y - e.deltaY,
+      }));
+    }
+  };
+
+  const handleZoomIn = () => {
+    setCamera((prev) => {
+      const newZoom = Math.min(prev.zoom * 1.25, 3.5);
+      const centerX = window.innerWidth / 2;
+      const centerY = window.innerHeight / 2;
+      return {
+        x: centerX - (centerX - prev.x) * (newZoom / prev.zoom),
+        y: centerY - (centerY - prev.y) * (newZoom / prev.zoom),
+        zoom: newZoom,
+      };
+    });
+  };
+
+  const handleZoomOut = () => {
+    setCamera((prev) => {
+      const newZoom = Math.max(prev.zoom / 1.25, 0.25);
+      const centerX = window.innerWidth / 2;
+      const centerY = window.innerHeight / 2;
+      return {
+        x: centerX - (centerX - prev.x) * (newZoom / prev.zoom),
+        y: centerY - (centerY - prev.y) * (newZoom / prev.zoom),
+        zoom: newZoom,
+      };
+    });
+  };
+
+  const handleResetZoom = () => {
+    setCamera({ x: 0, y: 0, zoom: 1 });
+  };
+
+  const handleFitView = () => {
+    if (elements.length === 0) {
+      setCamera({ x: 0, y: 0, zoom: 1 });
+      return;
+    }
+
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+
+    elements.forEach((el) => {
+      if (el.type === 'connector') return;
+      const x = el.x || 0;
+      const y = el.y || 0;
+      const w = el.width || 120;
+      const h = el.height || 80;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + w);
+      maxY = Math.max(maxY, y + h);
+
+      if (el.type === 'draw' && el.points?.length) {
+        el.points.forEach((pt) => {
+          minX = Math.min(minX, pt.x);
+          minY = Math.min(minY, pt.y);
+          maxX = Math.max(maxX, pt.x);
+          maxY = Math.max(maxY, pt.y);
+        });
+      }
+    });
+
+    if (minX === Infinity) return;
+
+    const padding = 120;
+    const contentW = maxX - minX + padding * 2;
+    const contentH = maxY - minY + padding * 2;
+
+    const screenW = window.innerWidth;
+    const screenH = window.innerHeight;
+
+    const scaleX = screenW / contentW;
+    const scaleY = screenH / contentH;
+    const fitZoom = Math.max(0.25, Math.min(scaleX, scaleY, 1.2));
+
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    setCamera({
+      x: screenW / 2 - centerX * fitZoom,
+      y: screenH / 2 - centerY * fitZoom,
+      zoom: fitZoom,
+    });
+    showInfo('Fit elements to view');
+  };
+
+  const handleAddStickyNote = (extra = {}) => {
     const center = screenToWorld(
       window.innerWidth / 2 - 110 + (Math.random() * 40 - 20),
       window.innerHeight / 2 - 110 + (Math.random() * 40 - 20)
@@ -170,66 +286,110 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
     const newNote = {
       id: `note-${Date.now()}`,
       type: 'sticky-note',
-      color,
-      isSquare,
+      color: extra.color || 'amber',
+      isSquare: extra.isSquare !== undefined ? extra.isSquare : true,
       text: '',
       fontFamily: 'Inter',
       fontSize: 'medium',
-      bold: false,
-      italic: false,
-      underline: false,
-      strikethrough: false,
-      align: 'left',
-      rotation: 0,
       x: Math.round(center.x),
       y: Math.round(center.y),
       width: 220,
       height: 220,
+      rotation: 0,
     };
     saveToHistory([...elements, newNote]);
     setSelectedIds([newNote.id]);
     setActiveTool('select');
   };
 
-  const handleAddImageBlock = () => {
+  const handleAddImageBlock = (imageUrl = null) => {
     const center = screenToWorld(
-      window.innerWidth / 2 - 160 + (Math.random() * 40 - 20),
-      window.innerHeight / 2 - 120 + (Math.random() * 40 - 20)
+      window.innerWidth / 2 - 140 + (Math.random() * 40 - 20),
+      window.innerHeight / 2 - 100 + (Math.random() * 40 - 20)
     );
-    const newImg = {
-      id: `img-${Date.now()}`,
+    const newImage = {
+      id: `image-${Date.now()}`,
       type: 'image-block',
+      imageUrl: imageUrl || null,
       caption: '',
-      imageUrl: null,
-      rotation: 0,
       x: Math.round(center.x),
       y: Math.round(center.y),
-      width: 320,
-      height: 240,
+      width: 280,
+      height: 200,
+      aspectRatio: 1.4,
+      rotation: 0,
     };
-    saveToHistory([...elements, newImg]);
-    setSelectedIds([newImg.id]);
+    saveToHistory([...elements, newImage]);
+    setSelectedIds([newImage.id]);
     setActiveTool('select');
+  };
+
+  const handleAddVideo = (videoUrl, title = '') => {
+    const center = screenToWorld(
+      window.innerWidth / 2 - 190 + (Math.random() * 40 - 20),
+      window.innerHeight / 2 - 130 + (Math.random() * 40 - 20)
+    );
+    const newVideo = {
+      id: `video-${Date.now()}`,
+      type: 'video-block',
+      videoUrl: videoUrl,
+      title: title || 'Video / Social Reel',
+      x: Math.round(center.x),
+      y: Math.round(center.y),
+      width: 380,
+      height: 260,
+      aspectRatio: 1.46,
+      rotation: 0,
+    };
+    saveToHistory([...elements, newVideo]);
+    setSelectedIds([newVideo.id]);
+    setActiveTool('select');
+    showSuccess('Inserted video / reel into canvas');
   };
 
   const handleAddShape = (shapeType) => {
     const center = screenToWorld(
-      window.innerWidth / 2 - 90 + (Math.random() * 40 - 20),
+      window.innerWidth / 2 - 110 + (Math.random() * 40 - 20),
       window.innerHeight / 2 - 60 + (Math.random() * 40 - 20)
     );
+
+    if (shapeType === 'text') {
+      const newText = {
+        id: `text-${Date.now()}`,
+        type: 'text',
+        x: Math.round(center.x),
+        y: Math.round(center.y),
+        width: 240,
+        height: 70,
+        text: 'Type something...',
+        fontSize: 24,
+        fontFamily: 'Inter',
+        bold: false,
+        italic: false,
+        underline: false,
+        strikethrough: false,
+        align: 'left',
+        lineHeight: 1.3,
+        letterSpacing: 0,
+        strokeColor: 'auto',
+        fillColor: 'transparent',
+        filled: false,
+        rotation: 0,
+      };
+      saveToHistory([...elements, newText]);
+      setSelectedIds([newText.id]);
+      setActiveTool('select');
+      return;
+    }
+
     const newShape = {
       id: `shape-${Date.now()}`,
       type: shapeType,
       x: Math.round(center.x),
       y: Math.round(center.y),
-      width: shapeType === 'text' ? 220 : shapeType === 'line' || shapeType === 'arrow' ? 160 : 180,
-      height:
-        shapeType === 'text'
-          ? 60
-          : shapeType === 'arrow' || shapeType === 'line'
-          ? 24
-          : 120,
-      text: shapeType === 'text' ? 'New text block' : '',
+      width: shapeType === 'line' || shapeType === 'arrow' ? 160 : 180,
+      height: shapeType === 'arrow' || shapeType === 'line' ? 24 : 120,
+      text: '',
       fontFamily: 'Inter',
       filled: false,
       fillColor: 'transparent',
@@ -293,10 +453,192 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
   const handleToggleLock = (id) => {
     const target = elements.find((e) => e.id === id);
     if (!target) return;
-    const willLock = !target.isLocked;
-    handleElementChange(id, { isLocked: willLock });
-    showInfo(willLock ? 'Element locked' : 'Element unlocked');
+    const nextState = !target.isLocked;
+    handleElementChange(id, { isLocked: nextState });
+    showInfo(nextState ? 'Element locked' : 'Element unlocked');
   };
+
+  // Universal Process Incoming Data (Files, Images, Videos, Instagram Reels, URLs, Texts)
+  const handleProcessIncomingData = useCallback(
+    async (dataTransfer, clientX, clientY) => {
+      const worldPos = screenToWorld(
+        clientX || window.innerWidth / 2,
+        clientY || window.innerHeight / 2
+      );
+
+      // 1. Check for dropped files
+      const files = Array.from(dataTransfer.files || []);
+      if (files.length > 0) {
+        for (const file of files) {
+          if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              const img = new Image();
+              img.onload = () => {
+                const maxDim = 400;
+                let w = img.naturalWidth || 300;
+                let h = img.naturalHeight || 200;
+                if (w > maxDim || h > maxDim) {
+                  const scale = maxDim / Math.max(w, h);
+                  w = Math.round(w * scale);
+                  h = Math.round(h * scale);
+                }
+                const newImg = {
+                  id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                  type: 'image-block',
+                  x: Math.round(worldPos.x - w / 2),
+                  y: Math.round(worldPos.y - h / 2),
+                  width: w,
+                  height: h,
+                  imageUrl: ev.target.result,
+                  caption: file.name.replace(/\.[^/.]+$/, ''),
+                  aspectRatio: w / h || 4 / 3,
+                  rotation: 0,
+                };
+                saveToHistory([...latestElementsRef.current, newImg]);
+                showSuccess(`Added image "${file.name}"`);
+              };
+              img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+          } else if (file.type.startsWith('video/')) {
+            const blobUrl = URL.createObjectURL(file);
+            const newVideo = {
+              id: `video-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+              type: 'video-block',
+              x: Math.round(worldPos.x - 190),
+              y: Math.round(worldPos.y - 130),
+              width: 380,
+              height: 260,
+              videoUrl: blobUrl,
+              title: file.name,
+              rotation: 0,
+            };
+            saveToHistory([...latestElementsRef.current, newVideo]);
+            showSuccess(`Added video "${file.name}"`);
+          }
+        }
+        return;
+      }
+
+      // 2. Check for text or URL
+      const textData =
+        dataTransfer.getData('text/uri-list') ||
+        dataTransfer.getData('text/plain') ||
+        '';
+
+      if (!textData) return;
+      const cleanText = textData.trim();
+      const isUrl = /^https?:\/\//i.test(cleanText);
+
+      if (isUrl) {
+        const isVideoOrSocial =
+          cleanText.includes('instagram.com') ||
+          cleanText.includes('youtube.com') ||
+          cleanText.includes('youtu.be') ||
+          cleanText.includes('tiktok.com') ||
+          cleanText.includes('vimeo.com') ||
+          cleanText.includes('loom.com') ||
+          cleanText.match(/\.(mp4|webm|mov|ogg)(\?.*)?$/i);
+
+        if (isVideoOrSocial) {
+          const newVideo = {
+            id: `video-${Date.now()}`,
+            type: 'video-block',
+            x: Math.round(worldPos.x - 190),
+            y: Math.round(worldPos.y - 130),
+            width: 380,
+            height: 260,
+            videoUrl: cleanText,
+            title: cleanText.includes('instagram.com')
+              ? 'Instagram Reel'
+              : cleanText.includes('youtube')
+              ? 'YouTube'
+              : cleanText.includes('tiktok')
+              ? 'TikTok'
+              : 'Video Media',
+            rotation: 0,
+          };
+          saveToHistory([...latestElementsRef.current, newVideo]);
+          showSuccess('Embedded social media reel into canvas');
+          return;
+        }
+
+        if (cleanText.match(/\.(png|jpg|jpeg|webp|gif|svg)(\?.*)?$/i)) {
+          const newImg = {
+            id: `img-${Date.now()}`,
+            type: 'image-block',
+            x: Math.round(worldPos.x - 160),
+            y: Math.round(worldPos.y - 120),
+            width: 320,
+            height: 240,
+            imageUrl: cleanText,
+            caption: '',
+            rotation: 0,
+          };
+          saveToHistory([...latestElementsRef.current, newImg]);
+          showSuccess('Added image link');
+          return;
+        }
+      }
+
+      // 3. Plain Text snippet dropped or pasted (Canva-style Text Element)
+      const newText = {
+        id: `text-${Date.now()}`,
+        type: 'text',
+        x: Math.round(worldPos.x - 120),
+        y: Math.round(worldPos.y - 40),
+        width: Math.min(Math.max(cleanText.length * 10, 200), 500),
+        height: 70,
+        text: cleanText,
+        fontSize: 24,
+        fontFamily: 'Inter',
+        bold: false,
+        italic: false,
+        underline: false,
+        strikethrough: false,
+        align: 'left',
+        lineHeight: 1.3,
+        letterSpacing: 0,
+        strokeColor: 'auto',
+        fillColor: 'transparent',
+        filled: false,
+        rotation: 0,
+      };
+      saveToHistory([...latestElementsRef.current, newText]);
+      setSelectedIds([newText.id]);
+      showSuccess('Created text on canvas');
+    },
+    [screenToWorld, saveToHistory, showSuccess]
+  );
+
+  // Global Clipboard Paste Listener
+  useEffect(() => {
+    const handleGlobalPaste = (e) => {
+      const active = document.activeElement;
+      const isTyping =
+        active &&
+        (active.tagName === 'INPUT' ||
+          active.tagName === 'TEXTAREA' ||
+          active.isContentEditable ||
+          active.getAttribute('contenteditable') === 'true' ||
+          active.closest?.('[contenteditable="true"]'));
+
+      if (isTyping) return;
+
+      if (e.clipboardData) {
+        e.preventDefault();
+        handleProcessIncomingData(
+          e.clipboardData,
+          window.innerWidth / 2,
+          window.innerHeight / 2
+        );
+      }
+    };
+
+    window.addEventListener('paste', handleGlobalPaste);
+    return () => window.removeEventListener('paste', handleGlobalPaste);
+  }, [handleProcessIncomingData]);
 
   const handleResizeStart = (e, dir, elemId) => {
     e.stopPropagation();
@@ -310,6 +652,7 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
       initialY: target.y,
       initialW: target.width || 180,
       initialH: target.height || 140,
+      initialFontSize: typeof target.fontSize === 'number' ? target.fontSize : 24,
       startMouseX: e.clientX,
       startMouseY: e.clientY,
     });
@@ -350,9 +693,6 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
     if (!source) return;
 
     const sourceW = source.width || 220;
-    const sourceH = source.height || 160;
-
-    // Position the new node directly to the right
     const newX = source.x + sourceW + 110;
     const newY = source.y;
 
@@ -378,15 +718,15 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
         type: 'rectangle',
         rounded: true,
         filled: true,
-        fillColor: isDark ? '#2E2E32' : '#DCFCE7',
-        strokeColor: isDark ? '#EDEDED' : '#16A34A',
+        fillColor: isDark ? '#2E2E32' : '#E0F2FE',
+        strokeColor: isDark ? '#A1A1AA' : '#0284C7',
         strokeWidth: 2,
-        text: 'Action step',
-        fontFamily: source.fontFamily || 'Inter',
+        text: '',
+        fontFamily: 'Inter',
         fontSize: 'medium',
         x: Math.round(newX),
-        y: Math.round(newY + 20),
-        width: 200,
+        y: Math.round(newY),
+        width: 180,
         height: 100,
         rotation: 0,
       };
@@ -396,46 +736,45 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
         type: 'diamond',
         filled: true,
         fillColor: isDark ? '#2E2E32' : '#FEF3C7',
-        strokeColor: isDark ? '#EDEDED' : '#D97706',
+        strokeColor: '#F59E0B',
         strokeWidth: 2,
-        text: 'Condition?',
-        fontFamily: source.fontFamily || 'Inter',
+        text: '',
+        fontFamily: 'Inter',
         fontSize: 'medium',
         x: Math.round(newX),
-        y: Math.round(newY + 10),
-        width: 180,
+        y: Math.round(newY),
+        width: 160,
         height: 120,
         rotation: 0,
       };
     } else if (nodeType === 'image-block') {
       newNode = {
-        id: `img-${Date.now()}`,
+        id: `image-${Date.now()}`,
         type: 'image-block',
-        caption: '',
         imageUrl: null,
+        caption: '',
         x: Math.round(newX),
         y: Math.round(newY),
-        width: 280,
-        height: 220,
+        width: 240,
+        height: 170,
         rotation: 0,
       };
-    } else {
+    } else if (nodeType === 'text') {
       newNode = {
-        id: `shape-${Date.now()}`,
+        id: `text-${Date.now()}`,
         type: 'text',
-        text: 'Connected note',
-        fontFamily: source.fontFamily || 'Inter',
-        fontSize: 'medium',
-        strokeColor: 'auto',
+        text: 'Connected text',
+        fontSize: 24,
+        fontFamily: 'Inter',
         x: Math.round(newX),
-        y: Math.round(newY + 40),
+        y: Math.round(newY),
         width: 180,
-        height: 50,
+        height: 60,
         rotation: 0,
       };
     }
 
-    // Create dynamic sticky wavy connector (stuck to source and target)
+    // Dynamic sticky wavy connector
     const newConnector = {
       id: `conn-${Date.now()}`,
       type: 'connector',
@@ -465,6 +804,16 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
   };
 
   const handleElementPointerDown = (e, id) => {
+    if (activeTool === 'hand') {
+      setIsPanning(true);
+      panStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        cameraX: camera.x,
+        cameraY: camera.y,
+      };
+      return;
+    }
     if (activeTool === 'eraser') {
       handleDeleteElement(id);
       return;
@@ -516,7 +865,13 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
     setContextMenu(null);
     setQuickConnectMenu(null);
 
-    if (e.button === 1 || e.buttons === 4 || isSpacePressed || e.altKey) {
+    if (
+      activeTool === 'hand' ||
+      e.button === 1 ||
+      e.buttons === 4 ||
+      isSpacePressed ||
+      e.altKey
+    ) {
       e.preventDefault();
       setIsPanning(true);
       panStartRef.current = {
@@ -554,7 +909,7 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
     }
   };
 
-  // High-performance, 60fps RAF batched pointer movement
+  // High-performance 60fps RAF batched pointer movement
   const handleCanvasPointerMove = (e) => {
     if (isPanning) {
       const dx = e.clientX - panStartRef.current.x;
@@ -575,7 +930,9 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
 
     if (rotating) {
       const worldPos = screenToWorld(e.clientX, e.clientY);
-      const currentAngle = Math.atan2(worldPos.y - rotating.centerY, worldPos.x - rotating.centerX) * (180 / Math.PI);
+      const currentAngle =
+        Math.atan2(worldPos.y - rotating.centerY, worldPos.x - rotating.centerX) *
+        (180 / Math.PI);
       const diff = currentAngle - rotating.startAngle;
       let newRot = Math.round(rotating.initialRotation + diff);
       if (e.shiftKey) {
@@ -586,7 +943,9 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(() => {
         setElements((prev) =>
-          prev.map((el) => (el.id === rotating.id ? { ...el, rotation: newRot } : el))
+          prev.map((el) =>
+            el.id === rotating.id ? { ...el, rotation: newRot } : el
+          )
         );
       });
       return;
@@ -595,38 +954,81 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
     if (resizing) {
       const deltaX = (e.clientX - resizing.startMouseX) / camera.zoom;
       const deltaY = (e.clientY - resizing.startMouseY) / camera.zoom;
-      const minSize = 60;
+      const minSize = 40;
 
       let newX = resizing.initialX;
       let newY = resizing.initialY;
       let newW = resizing.initialW;
       let newH = resizing.initialH;
+      let newFontSize = undefined;
 
       const dir = resizing.dir;
-      if (dir.includes('e')) newW = Math.max(resizing.initialW + deltaX, minSize);
-      if (dir.includes('s')) newH = Math.max(resizing.initialH + deltaY, minSize);
-      if (dir.includes('w')) {
-        const potentialW = resizing.initialW - deltaX;
-        if (potentialW >= minSize) {
-          newW = potentialW;
-          newX = resizing.initialX + deltaX;
-        }
-      }
-      if (dir.includes('n')) {
-        const potentialH = resizing.initialH - deltaY;
-        if (potentialH >= minSize) {
-          newH = potentialH;
-          newY = resizing.initialY + deltaY;
-        }
-      }
-
+      const isCorner = dir === 'nw' || dir === 'ne' || dir === 'se' || dir === 'sw';
       const targetEl = elements.find((el) => el.id === resizing.id);
-      if (targetEl?.type === 'image-block' || targetEl?.aspectRatio) {
-        const ratio = targetEl.aspectRatio || (resizing.initialW / resizing.initialH);
-        if (dir.includes('e') || dir.includes('w')) {
-          newH = Math.max(minSize, Math.round(newW / ratio));
+
+      if (targetEl?.type === 'text') {
+        if (isCorner) {
+          // CANVA SPEC A: CORNER DRAG scales BOTH text size and box size proportionally
+          if (dir === 'se') {
+            newW = Math.max(resizing.initialW + deltaX, minSize);
+          } else if (dir === 'sw') {
+            newW = Math.max(resizing.initialW - deltaX, minSize);
+            newX = resizing.initialX + (resizing.initialW - newW);
+          } else if (dir === 'ne') {
+            newW = Math.max(resizing.initialW + deltaX, minSize);
+            newY = resizing.initialY - (newW * (resizing.initialH / resizing.initialW) - resizing.initialH);
+          } else if (dir === 'nw') {
+            newW = Math.max(resizing.initialW - deltaX, minSize);
+            newX = resizing.initialX + (resizing.initialW - newW);
+            newY = resizing.initialY - (newW * (resizing.initialH / resizing.initialW) - resizing.initialH);
+          }
+          const scale = newW / resizing.initialW;
+          newH = Math.round(resizing.initialH * scale);
+          newFontSize = Math.max(8, Math.min(220, Math.round(resizing.initialFontSize * scale)));
         } else {
-          newW = Math.max(minSize, Math.round(newH * ratio));
+          // CANVA SPEC B: SIDE/EDGE DRAG reflows text within new width without changing fontSize
+          if (dir.includes('e')) newW = Math.max(resizing.initialW + deltaX, minSize);
+          if (dir.includes('w')) {
+            const potW = resizing.initialW - deltaX;
+            if (potW >= minSize) {
+              newW = potW;
+              newX = resizing.initialX + deltaX;
+            }
+          }
+          if (dir.includes('s')) newH = Math.max(resizing.initialH + deltaY, minSize);
+          if (dir.includes('n')) {
+            const potH = resizing.initialH - deltaY;
+            if (potH >= minSize) {
+              newH = potH;
+              newY = resizing.initialY + deltaY;
+            }
+          }
+        }
+      } else {
+        if (dir.includes('e')) newW = Math.max(resizing.initialW + deltaX, minSize);
+        if (dir.includes('s')) newH = Math.max(resizing.initialH + deltaY, minSize);
+        if (dir.includes('w')) {
+          const potentialW = resizing.initialW - deltaX;
+          if (potentialW >= minSize) {
+            newW = potentialW;
+            newX = resizing.initialX + deltaX;
+          }
+        }
+        if (dir.includes('n')) {
+          const potentialH = resizing.initialH - deltaY;
+          if (potentialH >= minSize) {
+            newH = potentialH;
+            newY = resizing.initialY + deltaY;
+          }
+        }
+
+        if (targetEl?.type === 'image-block' || targetEl?.type === 'video-block' || targetEl?.aspectRatio) {
+          const ratio = targetEl.aspectRatio || resizing.initialW / resizing.initialH;
+          if (dir.includes('e') || dir.includes('w')) {
+            newH = Math.max(minSize, Math.round(newW / ratio));
+          } else {
+            newW = Math.max(minSize, Math.round(newH * ratio));
+          }
         }
       }
 
@@ -641,6 +1043,7 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
                   y: Math.round(newY),
                   width: Math.round(newW),
                   height: Math.round(newH),
+                  ...(newFontSize !== undefined ? { fontSize: newFontSize } : {}),
                 }
               : el
           )
@@ -673,7 +1076,10 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
     if (isDrawing && activeTool === 'draw') {
       const worldPos = screenToWorld(e.clientX, e.clientY);
       currentPathRef.current.push(worldPos);
-      setElements((prev) => [...prev]);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        setElements((prev) => [...prev]);
+      });
       return;
     }
 
@@ -684,6 +1090,27 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
         currentX: worldPos.x,
         currentY: worldPos.y,
       }));
+
+      const minX = Math.min(selectionBox.startX, worldPos.x);
+      const maxX = Math.max(selectionBox.startX, worldPos.x);
+      const minY = Math.min(selectionBox.startY, worldPos.y);
+      const maxY = Math.max(selectionBox.startY, worldPos.y);
+
+      const enclosed = elements.filter((el) => {
+        if (el.type === 'connector') return false;
+        const elX = el.x || 0;
+        const elY = el.y || 0;
+        const elW = el.width || 50;
+        const elH = el.height || 50;
+        return (
+          elX >= minX &&
+          elX + elW <= maxX &&
+          elY >= minY &&
+          elY + elH <= maxY
+        );
+      });
+
+      setSelectedIds(enclosed.map((el) => el.id));
     }
   };
 
@@ -692,27 +1119,21 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
     if (isEraserDragging) setIsEraserDragging(false);
 
     if (rotating) {
-      saveBoardElements(boardId, latestElementsRef.current);
-      setHistory((prev) => [...(prev || []).slice(0, historyIndex + 1), latestElementsRef.current]);
-      setHistoryIndex((prev) => prev + 1);
       setRotating(null);
+      saveToHistory(latestElementsRef.current);
     }
 
     if (resizing) {
-      saveBoardElements(boardId, latestElementsRef.current);
-      setHistory((prev) => [...(prev || []).slice(0, historyIndex + 1), latestElementsRef.current]);
-      setHistoryIndex((prev) => prev + 1);
       setResizing(null);
+      saveToHistory(latestElementsRef.current);
     }
 
     if (draggingElement) {
-      saveBoardElements(boardId, latestElementsRef.current);
-      setHistory((prev) => [...(prev || []).slice(0, historyIndex + 1), latestElementsRef.current]);
-      setHistoryIndex((prev) => prev + 1);
       setDraggingElement(null);
+      saveToHistory(latestElementsRef.current);
     }
 
-    if (isDrawing) {
+    if (isDrawing && activeTool === 'draw') {
       setIsDrawing(false);
       if (currentPathRef.current.length > 1) {
         const newStroke = {
@@ -722,99 +1143,19 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
           strokeColor: pencilColor,
           strokeWidth: pencilStrokeWidth,
         };
-        saveToHistory([...elements, newStroke]);
+        saveToHistory([...latestElementsRef.current, newStroke]);
       }
       currentPathRef.current = [];
     }
 
-    if (selectionBox) {
-      const minX = Math.min(selectionBox.startX, selectionBox.currentX);
-      const maxX = Math.max(selectionBox.startX, selectionBox.currentX);
-      const minY = Math.min(selectionBox.startY, selectionBox.currentY);
-      const maxY = Math.max(selectionBox.startY, selectionBox.currentY);
-
-      const selected = elements
-        .filter((el) => {
-          const elX = el.x;
-          const elY = el.y;
-          const elW = el.width || 100;
-          const elH = el.height || 100;
-          return elX < maxX && elX + elW > minX && elY < maxY && elY + elH > minY;
-        })
-        .map((el) => el.id);
-
-      setSelectedIds(selected);
-      setSelectionBox(null);
-    }
-  };
-
-  const handleZoomIn = () => {
-    setCamera((prev) => ({ ...prev, zoom: Math.min(prev.zoom * 1.2, 4) }));
-  };
-
-  const handleZoomOut = () => {
-    setCamera((prev) => ({ ...prev, zoom: Math.max(prev.zoom / 1.2, 0.2) }));
-  };
-
-  const handleResetZoom = () => setCamera({ x: 0, y: 0, zoom: 1 });
-
-  const handleFitView = () => {
-    if (elements.length === 0) {
-      setCamera({ x: 0, y: 0, zoom: 1 });
-      return;
-    }
-    let minX = Infinity,
-      minY = Infinity,
-      maxX = -Infinity,
-      maxY = -Infinity;
-
-    elements.forEach((el) => {
-      minX = Math.min(minX, el.x);
-      minY = Math.min(minY, el.y);
-      maxX = Math.max(maxX, el.x + (el.width || 220));
-      maxY = Math.max(maxY, el.y + (el.height || 180));
-    });
-
-    const padding = 120;
-    const contentW = maxX - minX + padding * 2;
-    const contentH = maxY - minY + padding * 2;
-    const viewW = typeof window !== 'undefined' ? window.innerWidth : 1200;
-    const viewH = typeof window !== 'undefined' ? window.innerHeight : 800;
-
-    const newZoom = Math.min(
-      Math.max(Math.min(viewW / contentW, viewH / contentH), 0.3),
-      1.5
-    );
-    const newX = (viewW - (maxX + minX) * newZoom) / 2;
-    const newY = (viewH - (maxY + minY) * newZoom) / 2;
-
-    setCamera({ x: newX, y: newY, zoom: newZoom });
-  };
-
-  const handleWheel = (e) => {
-    e.preventDefault();
-    if (e.ctrlKey || e.metaKey) {
-      const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
-      const newZoom = Math.min(Math.max(camera.zoom * zoomFactor, 0.2), 4);
-      const rect = containerRef.current.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      const newX = mouseX - (mouseX - camera.x) * (newZoom / camera.zoom);
-      const newY = mouseY - (mouseY - camera.y) * (newZoom / camera.zoom);
-      setCamera({ x: newX, y: newY, zoom: newZoom });
-    } else {
-      setCamera((prev) => ({
-        ...prev,
-        x: prev.x - e.deltaX,
-        y: prev.y - e.deltaY,
-      }));
-    }
+    if (selectionBox) setSelectionBox(null);
   };
 
   const handleClearCanvasPrompt = () => {
     confirm({
       title: 'Clear whiteboard',
-      message: 'Are you sure you want to remove all elements and drawings from this whiteboard? This action cannot be undone.',
+      message:
+        'Are you sure you want to remove all elements and drawings from this whiteboard? This action cannot be undone.',
       confirmLabel: 'Clear whiteboard',
       cancelLabel: 'Cancel',
       isDanger: true,
@@ -826,25 +1167,21 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
     });
   };
 
+  // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
-      const active = typeof document !== 'undefined' ? document.activeElement : null;
+      const active = document.activeElement;
       const isTyping =
         active &&
         (active.tagName === 'INPUT' ||
           active.tagName === 'TEXTAREA' ||
           active.isContentEditable ||
           active.getAttribute('contenteditable') === 'true' ||
-          active.getAttribute('contenteditable') === '' ||
           active.closest?.('[contenteditable="true"]') ||
-          active.closest?.('[contenteditable=""]') ||
-          active.closest?.('input') ||
-          active.closest?.('textarea') ||
           active.closest?.('[role="dialog"]'));
 
-      if (isTyping) {
-        return;
-      }
+      if (isTyping) return;
+
       if (e.code === 'Space') {
         setIsSpacePressed(true);
       }
@@ -885,6 +1222,8 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
         }
       } else if (e.key.toLowerCase() === 'v') {
         setActiveTool('select');
+      } else if (e.key.toLowerCase() === 'h') {
+        setActiveTool('hand');
       } else if (e.key.toLowerCase() === 'p') {
         setActiveTool('draw');
       } else if (e.key.toLowerCase() === 'n') {
@@ -918,74 +1257,20 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [elements, selectedIds, handleUndo, handleRedo, saveToHistory]);
-
-  useEffect(() => {
-    const handlePaste = (e) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.startsWith('image/')) {
-          const file = items[i].getAsFile();
-          if (file) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-              const dataUrl = event.target?.result;
-              if (dataUrl) {
-                const img = new Image();
-                img.onload = () => {
-                  const nw = img.naturalWidth || 400;
-                  const nh = img.naturalHeight || 300;
-                  const ratio = nw / nh;
-                  let targetW = 400;
-                  let targetH = 300;
-
-                  if (ratio >= 1) {
-                    targetW = Math.min(500, Math.max(240, nw));
-                    targetH = Math.round(targetW / ratio);
-                  } else {
-                    targetH = Math.min(440, Math.max(240, nh));
-                    targetW = Math.round(targetH * ratio);
-                  }
-
-                  const center = screenToWorld(
-                    window.innerWidth / 2 - targetW / 2,
-                    window.innerHeight / 2 - targetH / 2
-                  );
-
-                  const newImg = {
-                    id: `img-${Date.now()}`,
-                    type: 'image-block',
-                    caption: 'Pasted image',
-                    imageUrl: dataUrl,
-                    x: Math.round(center.x),
-                    y: Math.round(center.y),
-                    width: targetW,
-                    height: targetH,
-                    aspectRatio: ratio,
-                    rotation: 0,
-                  };
-                  saveToHistory([...elements, newImg]);
-                  setSelectedIds([newImg.id]);
-                  showSuccess('Image pasted onto canvas');
-                };
-                img.src = dataUrl;
-              }
-            };
-            reader.readAsDataURL(file);
-          }
-        }
-      }
-    };
-
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, [elements, saveToHistory, screenToWorld, showSuccess]);
+  }, [
+    elements,
+    selectedIds,
+    history,
+    historyIndex,
+    handleUndo,
+    handleRedo,
+    saveToHistory,
+  ]);
 
   const safeElements = Array.isArray(elements) ? elements : [];
-  const selectedElement = safeElements.find((el) => el.id === selectedIds[0]);
+  const selectedElement =
+    safeElements.find((e) => e.id === selectedIds[0]) || null;
 
-  const dotColor = isDark ? '#3A3A3C' : '#D3D1C7';
   const canvasBg = isDark ? '#18181A' : '#F1EFE8';
   const patternDotColor = isDark ? '#36363B' : '#C7C5BE';
   const patternLineColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)';
@@ -1003,14 +1288,12 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
     bgSize = `${gridSize}px ${gridSize}px`;
     bgPosition = `${offX}px ${offY}px`;
   } else if (canvasPattern === 'lines') {
-    // Notebook ruled lines
     const lineSpacing = 28 * camera.zoom;
     const offY = ((camera.y % lineSpacing) + lineSpacing) % lineSpacing;
     bgImage = `linear-gradient(to bottom, transparent ${lineSpacing - 1}px, ${ruledLineColor} ${lineSpacing - 1}px)`;
     bgSize = `100% ${lineSpacing}px`;
     bgPosition = `0px ${offY}px`;
   } else if (canvasPattern === 'grid') {
-    // Square boxes / graph grid
     const boxSize = 24 * camera.zoom;
     const offX = ((camera.x % boxSize) + boxSize) % boxSize;
     const offY = ((camera.y % boxSize) + boxSize) % boxSize;
@@ -1029,13 +1312,21 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
       onPointerUp={handleCanvasPointerUp}
       onWheel={handleWheel}
       onContextMenu={(e) => handleContextMenu(e, null)}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        handleProcessIncomingData(e.dataTransfer, e.clientX, e.clientY);
+      }}
       style={{
         backgroundColor: canvasBg,
         backgroundImage: bgImage,
         backgroundSize: bgSize,
         backgroundPosition: bgPosition,
         cursor:
-          isSpacePressed || isPanning
+          activeTool === 'hand' || isSpacePressed || isPanning
             ? isPanning
               ? 'grabbing'
               : 'grab'
@@ -1060,6 +1351,7 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
         onChangePattern={handleChangePattern}
         onAddStickyNote={handleAddStickyNote}
         onAddImageBlock={handleAddImageBlock}
+        onAddVideo={handleAddVideo}
         onAddShape={handleAddShape}
         onUndo={handleUndo}
         onRedo={handleRedo}
@@ -1096,7 +1388,7 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
         onFitView={handleFitView}
       />
 
-      {/* n8n-style Quick Connect "+" Trigger Popover Menu */}
+      {/* Quick Connect Popover */}
       {quickConnectMenu && (
         <div
           role="dialog"
@@ -1134,10 +1426,10 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
 
           <button
             onClick={() => handleQuickConnectCreate('rectangle')}
-            className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-neutral-700 dark:text-neutral-200 text-xs transition text-left cursor-pointer"
+            className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-950/40 text-neutral-700 dark:text-neutral-200 text-xs transition text-left cursor-pointer"
           >
-            <Square className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-            <span>Action step</span>
+            <Square className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+            <span>Process box</span>
             <ArrowRight className="w-2.5 h-2.5 opacity-40 ml-auto" />
           </button>
 
@@ -1218,7 +1510,7 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
           pointerEvents: 'none',
         }}
       >
-        {/* Draw vector strokes SVG layer */}
+        {/* Draw vector strokes & Connectors SVG layer */}
         <svg className="absolute top-0 left-0 w-[50000px] h-[50000px] -translate-x-[25000px] -translate-y-[25000px] overflow-visible pointer-events-none">
           <g transform="translate(25000, 25000)">
             {/* Dynamic Sticky Wavy Connectors */}
@@ -1232,7 +1524,9 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
 
                 const stroke =
                   conn.strokeColor === 'auto' || !conn.strokeColor
-                    ? (isDark ? '#A1A1AA' : '#71717A')
+                    ? isDark
+                      ? '#A1A1AA'
+                      : '#71717A'
                     : conn.strokeColor;
                 const isSelected = selectedIds.includes(conn.id);
 
@@ -1241,17 +1535,18 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
                     key={conn.id}
                     data-element-id={conn.id}
                     onClick={(e) => {
+                      if (activeTool === 'hand') return;
                       e.stopPropagation();
                       setSelectedIds([conn.id]);
                     }}
                     onContextMenu={(e) => {
+                      if (activeTool === 'hand') return;
                       e.preventDefault();
                       e.stopPropagation();
                       handleContextMenu(e, conn.id);
                     }}
-                    className="cursor-pointer pointer-events-auto"
+                    className={activeTool === 'hand' ? 'pointer-events-none' : 'cursor-pointer pointer-events-auto'}
                   >
-                    {/* Invisible hit area for easy clicking */}
                     <path
                       d={pathInfo.d}
                       fill="none"
@@ -1259,7 +1554,6 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
                       strokeWidth={24}
                       strokeLinecap="round"
                     />
-                    {/* Smooth wavy bezier wire */}
                     <path
                       d={pathInfo.d}
                       fill="none"
@@ -1272,7 +1566,6 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
                           : 'hover:stroke-blue-400'
                       }`}
                     />
-                    {/* Start & End connection anchor dots */}
                     <circle
                       cx={pathInfo.startX}
                       cy={pathInfo.startY}
@@ -1296,9 +1589,13 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
                   key={el.id}
                   {...el}
                   isSelected={selectedIds.includes(el.id)}
-                  onSelect={(id) => setSelectedIds([id])}
+                  onSelect={(id) => {
+                    if (activeTool !== 'hand') setSelectedIds([id]);
+                  }}
                   onPointerDown={handleElementPointerDown}
-                  onContextMenu={(e, id) => handleContextMenu(e, id)}
+                  onContextMenu={(e, id) => {
+                    if (activeTool !== 'hand') handleContextMenu(e, id);
+                  }}
                 />
               ))}
 
@@ -1326,9 +1623,13 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
         </svg>
 
         {/* DOM Canvas Elements Layer */}
-        <div className="absolute top-0 left-0 w-full h-full pointer-events-auto">
+        <div
+          className={`absolute top-0 left-0 w-full h-full ${
+            activeTool === 'hand' ? 'pointer-events-none' : 'pointer-events-auto'
+          }`}
+        >
           {safeElements
-            .filter((el) => el.type !== 'draw')
+            .filter((el) => el.type !== 'draw' && el.type !== 'connector')
             .map((el) => {
               if (el.type === 'sticky-note') {
                 return (
@@ -1349,9 +1650,47 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
                 );
               }
 
+              if (el.type === 'text') {
+                return (
+                  <TextElement
+                    key={el.id}
+                    {...el}
+                    isSelected={selectedIds.includes(el.id)}
+                    onSelect={(id) => setSelectedIds([id])}
+                    onChange={handleElementChange}
+                    onDelete={handleDeleteElement}
+                    onDuplicate={handleDuplicateElement}
+                    onPointerDown={handleElementPointerDown}
+                    onResizeStart={(e, dir) => handleResizeStart(e, dir, el.id)}
+                    onRotateStart={(e) => handleRotateStart(e, el.id)}
+                    onQuickConnect={(e) => handleQuickConnectOpen(e, el.id)}
+                    onContextMenu={(e, id) => handleContextMenu(e, id)}
+                  />
+                );
+              }
+
               if (el.type === 'image-block') {
                 return (
                   <ImageBlock
+                    key={el.id}
+                    {...el}
+                    isSelected={selectedIds.includes(el.id)}
+                    onSelect={(id) => setSelectedIds([id])}
+                    onChange={handleElementChange}
+                    onDelete={handleDeleteElement}
+                    onDuplicate={handleDuplicateElement}
+                    onPointerDown={handleElementPointerDown}
+                    onResizeStart={(e, dir) => handleResizeStart(e, dir, el.id)}
+                    onRotateStart={(e) => handleRotateStart(e, el.id)}
+                    onQuickConnect={(e) => handleQuickConnectOpen(e, el.id)}
+                    onContextMenu={(e, id) => handleContextMenu(e, id)}
+                  />
+                );
+              }
+
+              if (el.type === 'video-block') {
+                return (
+                  <VideoBlock
                     key={el.id}
                     {...el}
                     isSelected={selectedIds.includes(el.id)}
