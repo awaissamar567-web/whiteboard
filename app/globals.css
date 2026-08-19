@@ -1,0 +1,146 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Caveat:wght@400..700&family=Cinzel:wght@600;700;800&family=Comic+Neue:wght@400;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Serif+Display:ital@0;1&family=Inter:wght@200;300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,600;1,400&family=Oswald:wght@500;600;700&family=Outfit:wght@200;300;400;500;600;700&family=Patrick+Hand&family=Permanent+Marker&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=Syne:wght@600;700;800&display=swap');
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --wb-canvas-bg: #F1EFE8;
+    --wb-canvas-dot: #D3D1C7;
+    --wb-surface-card: #FFFFFF;
+    --wb-surface-border: #E2DFD8;
+    --wb-surface-toolbar: #FFFFFF;
+    --wb-surface-toolbar-border: rgba(0, 0, 0, 0.08);
+    --wb-text-main: #18181A;
+    --wb-text-muted: #71717A;
+    
+    --wb-amber-fill: #FEF3C7;
+    --wb-amber-border: #D97706;
+    --wb-amber-text: #78350F;
+    
+    --wb-teal-fill: #CCFBF1;
+    --wb-teal-border: #0D9488;
+    --wb-teal-text: #115E59;
+  }
+
+  .dark {
+    --wb-canvas-bg: #18181A;
+    --wb-canvas-dot: #3A3A3C;
+    --wb-surface-card: #222225;
+    --wb-surface-border: #2E2E32;
+    --wb-surface-toolbar: #202024;
+    --wb-surface-toolbar-border: rgba(255, 255, 255, 0.1);
+    --wb-text-main: #EDEDED;
+    --wb-text-muted: #A1A1AA;
+    
+    --wb-amber-fill: #451A03;
+    --wb-amber-border: #B45309;
+    --wb-amber-text: #FEF3C7;
+    
+    --wb-teal-fill: #042F2E;
+    --wb-teal-border: #14B8A6;
+    --wb-teal-text: #CCFBF1;
+  }
+
+  body {
+    background-color: var(--wb-canvas-bg);
+    color: var(--wb-text-main);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  /* Universal Minimal Scrollbar (No ugly white background or arrows) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(120, 120, 120, 0.35) transparent;
+  }
+
+  .dark * {
+    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  }
+
+  /* WebKit browser scrollbar normalization */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.18);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.35);
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.22);
+  }
+
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.4);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-button {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+}
+
+/* Custom dedicated scrollbar class */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 120, 120, 0.35) transparent;
+}
+
+.dark .custom-scrollbar {
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.custom-scrollbar::-webkit-scrollbar-button {
+  display: none !important;
+}
+
+/* Custom font utility classes */
+.font-inter { font-family: 'Inter', sans-serif; }
+.font-playfair { font-family: 'Playfair Display', serif; }
+.font-caveat { font-family: 'Caveat', cursive; }
+.font-mono-code { font-family: 'JetBrains Mono', monospace; }
+.font-jakarta { font-family: 'Plus Jakarta Sans', sans-serif; }
+.font-lora { font-family: 'Lora', serif; }
+.font-hand { font-family: 'Patrick Hand', cursive; }
+.font-comic { font-family: 'Comic Neue', cursive; }
