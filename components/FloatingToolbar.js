@@ -19,6 +19,7 @@ import {
   Moon,
   Laptop,
   Download,
+  Trash2,
   Plus,
   Grid,
   Rows3,
