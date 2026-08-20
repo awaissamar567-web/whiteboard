@@ -4,10 +4,11 @@ import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Cloud, Check } from 'lucide-react';
 import { ThemeProvider } from '@/components/ThemeContext';
 import { ToastProvider, useToast } from '@/components/ToastContext';
 import { getBoardsMeta, renameBoard } from '@/lib/boardStore';
+import { fetchBoardFromCloud } from '@/lib/supabaseSync';
 
 const WhiteboardCanvas = dynamic(
   () => import('@/components/WhiteboardCanvas'),
@@ -32,6 +33,7 @@ function BoardCanvasWrapper() {
   const [boardMeta, setBoardMeta] = useState(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState('');
+  const [isCloudSynced, setIsCloudSynced] = useState(false);
 
   useEffect(() => {
     const metaList = getBoardsMeta();
@@ -42,6 +44,21 @@ function BoardCanvasWrapper() {
     };
     setBoardMeta(current);
     setTitleInput(current.title);
+
+    // Initial Cloud Fetch & Realtime Hookup
+    fetchBoardFromCloud(boardId).then((cloudData) => {
+      if (cloudData) {
+        setIsCloudSynced(true);
+        setBoardMeta((prev) => ({
+          ...prev,
+          title: cloudData.title || prev.title,
+          color: cloudData.color || prev.color,
+        }));
+        setTitleInput(cloudData.title || current.title);
+      } else {
+        setIsCloudSynced(true);
+      }
+    });
   }, [boardId]);
 
   const handleSaveTitle = () => {
@@ -95,7 +112,10 @@ function BoardCanvasWrapper() {
           )}
 
           <span className="text-neutral-300 dark:text-neutral-700">•</span>
-          <span className="text-[10px] text-neutral-400 font-mono">auto-saved</span>
+          <div className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+            <Cloud className="w-3 h-3" />
+            <span>Synced</span>
+          </div>
         </div>
       </header>
 

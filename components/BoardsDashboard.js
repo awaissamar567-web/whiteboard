@@ -30,6 +30,11 @@ import {
   renameBoard,
   STARTER_TEMPLATES,
 } from '../lib/boardStore';
+import {
+  fetchAllBoardsFromCloud,
+  syncBoardToCloud,
+  deleteBoardFromCloud,
+} from '../lib/supabaseSync';
 
 function formatRelativeTime(isoDate) {
   if (!isoDate) return 'Edited recently';
@@ -68,6 +73,11 @@ export default function BoardsDashboard() {
 
   useEffect(() => {
     setBoards(getBoardsMeta());
+    fetchAllBoardsFromCloud().then((cloudList) => {
+      if (cloudList && cloudList.length > 0) {
+        setBoards(cloudList);
+      }
+    });
   }, []);
 
   const handleCreateNew = (e) => {
@@ -78,6 +88,7 @@ export default function BoardsDashboard() {
       templateId: selectedTemplate,
       color: selectedColor,
     });
+    syncBoardToCloud(created.id, created);
     setIsNewModalOpen(false);
     setNewTitle('');
     setNewDescription('');
@@ -98,6 +109,7 @@ export default function BoardsDashboard() {
       isDanger: true,
       onConfirm: () => {
         const next = deleteBoard(b.id);
+        deleteBoardFromCloud(b.id);
         setBoards(next);
         showSuccess(`Deleted "${b.title}"`);
       },
@@ -108,6 +120,10 @@ export default function BoardsDashboard() {
     e.preventDefault();
     e.stopPropagation();
     const next = duplicateBoard(b.id);
+    const newBoard = next[0];
+    if (newBoard) {
+      syncBoardToCloud(newBoard.id, newBoard);
+    }
     setBoards(next);
     showSuccess(`Duplicated "${b.title}"`);
   };
@@ -118,10 +134,13 @@ export default function BoardsDashboard() {
     const next = toggleStarBoard(b.id);
     setBoards(next);
     const updated = next.find((item) => item.id === b.id);
-    if (updated?.isStarred) {
-      showInfo(`Starred "${b.title}"`);
-    } else {
-      showInfo(`Unstarred "${b.title}"`);
+    if (updated) {
+      syncBoardToCloud(b.id, updated);
+      if (updated.isStarred) {
+        showInfo(`Starred "${b.title}"`);
+      } else {
+        showInfo(`Unstarred "${b.title}"`);
+      }
     }
   };
 
@@ -137,6 +156,10 @@ export default function BoardsDashboard() {
     if (formatted && formatted !== b.title) {
       const next = renameBoard(b.id, formatted);
       setBoards(next);
+      const updated = next.find((item) => item.id === b.id);
+      if (updated) {
+        syncBoardToCloud(b.id, updated);
+      }
       showSuccess(`Renamed to "${formatted}"`);
     }
     setRenamingId(null);

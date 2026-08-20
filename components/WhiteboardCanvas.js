@@ -22,6 +22,7 @@ import ImageBlock from './ImageBlock';
 import ShapeElement from './ShapeElement';
 import { getBoardElements, saveBoardElements } from '../lib/boardStore';
 import { computeConnectorPath } from './BoardThumbnail';
+import { syncBoardToCloud, subscribeToBoardRealtime } from '../lib/supabaseSync';
 
 export default function WhiteboardCanvas({ boardId = 'board-main' }) {
   const { isDark } = useTheme();
@@ -87,6 +88,18 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
     setHistory([safeLoaded]);
     setHistoryIndex(0);
     setSelectedIds([]);
+
+    // Subscribe to realtime updates
+    const unsubscribe = subscribeToBoardRealtime(boardId, (remoteBoard) => {
+      if (remoteBoard?.elements && Array.isArray(remoteBoard.elements)) {
+        setElements(remoteBoard.elements);
+        saveBoardElements(boardId, remoteBoard.elements);
+      }
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [boardId]);
 
   const saveToHistory = useCallback(
@@ -100,8 +113,9 @@ export default function WhiteboardCanvas({ boardId = 'board-main' }) {
       });
       setHistoryIndex((prev) => prev + 1);
       saveBoardElements(boardId, newElements);
+      syncBoardToCloud(boardId, null, newElements, canvasPattern);
     },
-    [boardId, historyIndex]
+    [boardId, historyIndex, canvasPattern]
   );
 
   const handleUndo = useCallback(() => {
